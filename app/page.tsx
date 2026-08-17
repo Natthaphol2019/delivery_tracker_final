@@ -1,69 +1,96 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { useRouter } from "next/navigation";
+import { Clock, UserCircle2, LogOut } from "lucide-react";
+import { useDelivery } from "@/hooks/useDelivery";
+import { TrackerTab, SummaryTab, HistoryTab, BottomNav } from "@/components/DeliveryTabs";
+
+export default function AppMainPage() {
+  const supabase = createClient();
+  const router = useRouter();
+  
+  const [profile, setProfile] = useState<any>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // ตรวจสอบสิทธิ์ (Auth Guard)
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { router.push("/login"); return; }
+
+        const { data: userProfile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single(); 
+        
+        // ถ้าเป็น Admin เด้งไปหน้าแอดมิน
+        if (userProfile?.role === 'admin') {
+          router.push("/admin");
+          return;
+        }
+        
+        setProfile(userProfile);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    checkAuth();
+  }, [supabase, router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
+  if (isInitializing) return <div className="min-h-screen flex items-center justify-center bg-indigo-50 font-sans text-indigo-600 font-bold">กำลังโหลดแอปพลิเคชัน...</div>;
+
+  // ถ้าบัญชียังไม่อนุมัติ
+  if (profile?.status === 'pending') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 font-sans text-center">
+        <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 max-w-sm w-full">
+          <Clock className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+          <h2 className="text-xl font-black text-slate-800 mb-2">รอผู้ดูแลระบบอนุมัติ</h2>
+          <p className="text-slate-500 text-sm mb-6">กรุณาแจ้งแอดมินเพื่อเปิดสิทธิ์การใช้งาน</p>
+          <button onClick={handleLogout} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold">ออกจากระบบ</button>
+        </div>
+      </div>
+    );
+  }
+
+  // เรียกใช้ TrackerApp โดยส่ง Profile เข้าไป
+  return <TrackerApp profile={profile} onLogout={handleLogout} />;
+}
+
+// ================= คอมโพเนนต์หลักที่ประกอบร่างแอป =================
+function TrackerApp({ profile, onLogout }: { profile: any, onLogout: () => void }) {
+  // เรียกใช้ Custom Hook ตัวเดียวจบ
+  const delivery = useDelivery(profile);
+  const displayName = profile?.username || "กำลังโหลด...";
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col pb-24 relative overflow-x-hidden">
+      
+      {/* Header ของพนักงาน */}
+      <div className="bg-indigo-600 px-4 py-3 flex justify-between items-center text-white sticky top-0 z-30 shadow-md">
+        <div className="flex items-center gap-2">
+          <UserCircle2 className="w-5 h-5"/> 
+          <span className="font-bold uppercase">{displayName}</span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        <button onClick={onLogout} className="text-indigo-200 hover:text-white text-xs font-bold transition-colors">
+          <LogOut className="w-4 h-4 inline" /> ออกจากระบบ
+        </button>
+      </div>
+
+      {/* ควบคุมการเปลี่ยนหน้าต่างด้วย State Active Tab */}
+      {delivery.activeTab === 'tracker' && <TrackerTab delivery={delivery} />}
+      {delivery.activeTab === 'summary' && <SummaryTab delivery={delivery} />}
+      {delivery.activeTab === 'history' && <HistoryTab delivery={delivery} />}
+
+      {/* เมนูด้านล่างสุด */}
+      <BottomNav delivery={delivery} />
     </div>
   );
 }
