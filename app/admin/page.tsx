@@ -5,255 +5,413 @@ import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import Swal from 'sweetalert2';
-import { Users, ClipboardEdit, CheckCircle2, Clock, ArrowLeft, LogOut, ShieldCheck, UserCircle2, Database, Trash2, Edit2 } from "lucide-react";
+import Swal from "sweetalert2";
+import {
+  Users,
+  ClipboardEdit,
+  CheckCircle2,
+  Clock,
+  ArrowLeft,
+  LogOut,
+  ShieldCheck,
+  UserCircle2,
+  Database,
+  Trash2,
+  Edit2,
+  XCircle
+} from "lucide-react";
 
 export default function AdminDashboard() {
   const supabase = createClient();
   const router = useRouter();
-  
-  const [users, setUsers] = useState([]);
-  const [deliveries, setDeliveries] = useState([]); // 👈 สเตทสำหรับเก็บประวัติ (CRUD)
+
+  const [users, setUsers] = useState<any[]>([]);
+  const [deliveries, setDeliveries] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState("manage"); // 'manage', 'kiosk', 'history'
-  
+
   // สำหรับโหมด Kiosk
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [rate, setRate] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const initAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return router.push('/login');
+      if (!session) return router.push("/admin/login");
 
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-      if (profile?.role !== 'admin') return router.push('/');
-      
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .single();
+        
+      if (profile?.role !== "admin") return router.push("/");
+
       setIsAdmin(true);
       fetchUsers();
     };
     initAuth();
   }, [router, supabase]);
 
-  // ดึงข้อมูลเมื่อเปลี่ยนแท็บไปหน้า History
+  // ดึงข้อมูลเมื่อเปลี่ยนแท็บไปหน้า History และรีเซ็ตโหมด Kiosk ถ้าเปลี่ยนแท็บ
   useEffect(() => {
-    if (activeTab === 'history') fetchDeliveries();
+    if (activeTab === "history") fetchDeliveries();
+    if (activeTab !== "kiosk") {
+      setSelectedUser(null);
+      setRate("");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   const fetchUsers = async () => {
-    const { data } = await supabase.from('profiles').select('*').neq('role', 'admin').order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .neq("role", "admin")
+      .order("created_at", { ascending: false });
     setUsers(data || []);
   };
 
   // ================= (R) READ: ดึงประวัติยอดจัดส่งทั้งหมด =================
   const fetchDeliveries = async () => {
     const { data } = await supabase
-      .from('deliveries')
-      .select('*, profiles(username)') // จอยตารางเพื่อเอาชื่อพนักงานมาแสดงด้วย
-      .order('created_at', { ascending: false })
-      .limit(50); // โชว์ 50 รายการล่าสุด
+      .from("deliveries")
+      .select("*, profiles(username)")
+      .order("created_at", { ascending: false })
+      .limit(50);
     setDeliveries(data || []);
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    router.push("/admin/login");
   };
 
   // ================= 1. ฟังก์ชันจัดการสิทธิ์ผู้ใช้ =================
-  const toggleStatus = async (id, currentStatus, username) => {
-    const newStatus = currentStatus === 'approved' ? 'pending' : 'approved';
-    const actionText = newStatus === 'approved' ? 'ระงับ' : 'อนุมัติ';
-    
+  const toggleStatus = async (id: string, currentStatus: string, username: string) => {
+    const newStatus = currentStatus === "approved" ? "pending" : "approved";
+    const actionText = newStatus === "approved" ? "อนุมัติ" : "ระงับ";
+
     const { isConfirmed } = await Swal.fire({
-      title: `ยืนยันการ${actionText}?`, text: `ต้องการ${actionText}ผู้ใช้ ${username}?`, icon: 'warning', showCancelButton: true, confirmButtonColor: newStatus === 'approved' ? '#10b981' : '#ef4444'
+      title: `ยืนยันการ${actionText}?`,
+      text: `ต้องการ${actionText}ผู้ใช้ ${username}?`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: newStatus === "approved" ? "#2563eb" : "#ef4444",
+      cancelButtonColor: "#94a3b8",
+      confirmButtonText: `ใช่, ${actionText}`,
+      cancelButtonText: "ยกเลิก"
     });
 
     if (isConfirmed) {
-      await supabase.from('profiles').update({ status: newStatus }).eq('id', id);
+      await supabase.from("profiles").update({ status: newStatus }).eq("id", id);
       fetchUsers();
-      Swal.fire('สำเร็จ', `อัปเดตสถานะ ${username} เรียบร้อย`, 'success');
+      Swal.fire({
+        icon: "success",
+        title: "สำเร็จ",
+        text: `อัปเดตสถานะ ${username} เรียบร้อย`,
+        showConfirmButton: false,
+        timer: 1500
+      });
     }
   };
 
   // ================= (C) CREATE: คีย์ยอดแทนลูกน้อง (โหมด Kiosk) =================
-  const handleSaveDelivery = async (e) => {
+  const handleSaveDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rate || !selectedUser) return;
-    
+
     setIsSaving(true);
-    const dateStr = new Date().toISOString().split('T')[0];
-    
-    const { error } = await supabase.from("deliveries").insert([{
-      delivery_date: dateStr, quantity: 1, rate_per_piece: Number(rate), user_id: selectedUser.id
-    }]);
+    const dateStr = new Date().toISOString().split("T")[0];
+
+    const { error } = await supabase.from("deliveries").insert([
+      {
+        delivery_date: dateStr,
+        quantity: 1,
+        rate_per_piece: Number(rate),
+        user_id: selectedUser.id,
+      },
+    ]);
 
     setIsSaving(false);
     if (error) {
-      Swal.fire('ผิดพลาด', 'บันทึกข้อมูลไม่สำเร็จ', 'error');
+      Swal.fire("ผิดพลาด", "บันทึกข้อมูลไม่สำเร็จ", "error");
     } else {
-      Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ!', text: `ลงยอดให้ ${selectedUser.username}`, showConfirmButton: false, timer: 1500 });
-      setRate(""); 
+      Swal.fire({
+        icon: "success",
+        title: "บันทึกสำเร็จ!",
+        text: `ลงยอดให้ ${selectedUser.username} เรียบร้อย`,
+        showConfirmButton: false,
+        timer: 1500,
+      });
+      setRate("");
     }
   };
 
   // ================= (U) UPDATE: แก้ไขราคาจัดส่ง =================
-  const handleEditDelivery = async (item) => {
+  const handleEditDelivery = async (item: any) => {
     const { value: newRate } = await Swal.fire({
-      title: 'แก้ไขราคาจัดส่ง',
-      text: `ของ ${item.profiles?.username} (วันที่ ${format(new Date(item.delivery_date), "d MMM yy", { locale: th })})`,
-      input: 'number',
+      title: "แก้ไขราคาจัดส่ง",
+      html: `ของ <b>${item.profiles?.username}</b><br/><span class="text-sm text-slate-500">วันที่ ${format(new Date(item.delivery_date), "d MMM yy", { locale: th })}</span>`,
+      input: "number",
       inputValue: item.rate_per_piece,
       showCancelButton: true,
-      confirmButtonText: 'บันทึก',
-      cancelButtonText: 'ยกเลิก'
+      confirmButtonColor: "#2563eb",
+      cancelButtonColor: "#94a3b8",
+      confirmButtonText: "บันทึกการแก้ไข",
+      cancelButtonText: "ยกเลิก",
+      inputValidator: (value) => {
+        if (!value || Number(value) <= 0) return 'กรุณาระบุราคาที่ถูกต้อง';
+      }
     });
 
     if (newRate && Number(newRate) !== Number(item.rate_per_piece)) {
-      const { error } = await supabase.from('deliveries').update({ rate_per_piece: Number(newRate) }).eq('id', item.id);
+      const { error } = await supabase
+        .from("deliveries")
+        .update({ rate_per_piece: Number(newRate) })
+        .eq("id", item.id);
       if (!error) {
-        Swal.fire({ icon: 'success', title: 'อัปเดตสำเร็จ', showConfirmButton: false, timer: 1000 });
-        fetchDeliveries(); // โหลดข้อมูลใหม่
+        Swal.fire({
+          icon: "success",
+          title: "อัปเดตราคาสำเร็จ",
+          showConfirmButton: false,
+          timer: 1000,
+        });
+        fetchDeliveries();
       }
     }
   };
 
   // ================= (D) DELETE: ลบรายการจัดส่ง =================
-  const handleDeleteDelivery = async (id) => {
+  const handleDeleteDelivery = async (id: string) => {
     const { isConfirmed } = await Swal.fire({
-      title: 'ลบรายการนี้?',
-      text: 'ข้อมูลที่ลบจะไม่สามารถกู้คืนได้!',
-      icon: 'error',
+      title: "ลบรายการนี้?",
+      text: "ข้อมูลที่ลบจะไม่สามารถกู้คืนได้!",
+      icon: "error",
       showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      confirmButtonText: 'ใช่, ลบทิ้งเลย',
-      cancelButtonText: 'ยกเลิก'
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#94a3b8",
+      confirmButtonText: "ใช่, ลบทิ้งเลย",
+      cancelButtonText: "ยกเลิก",
+      reverseButtons: true
     });
 
     if (isConfirmed) {
-      await supabase.from('deliveries').delete().eq('id', id);
-      Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', showConfirmButton: false, timer: 1000 });
-      fetchDeliveries(); // โหลดข้อมูลใหม่
+      await supabase.from("deliveries").delete().eq("id", id);
+      Swal.fire({
+        icon: "success",
+        title: "ลบข้อมูลสำเร็จ",
+        showConfirmButton: false,
+        timer: 1000,
+      });
+      fetchDeliveries();
     }
   };
 
-  if (!isAdmin) return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white font-bold">กำลังตรวจสอบสิทธิ์...</div>;
+  if (!isAdmin) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-bold">กำลังตรวจสอบสิทธิ์...</div>;
 
-  const pendingUsers = users.filter(u => u.status === 'pending');
-  const approvedUsers = users.filter(u => u.status === 'approved');
+  const pendingUsers = users.filter((u) => u.status === "pending");
+  const approvedUsers = users.filter((u) => u.status === "approved");
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans pb-10">
-      <div className="bg-slate-900 text-white p-6 shadow-lg">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-500 p-2 rounded-xl"><ShieldCheck className="w-8 h-8" /></div>
-            <div>
-              <h1 className="text-xl font-black uppercase tracking-widest">Admin Control</h1>
-              <p className="text-slate-400 text-xs">ระบบจัดการกลาง</p>
-            </div>
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col pb-10">
+      
+      {/* Header (Business Theme) */}
+      <div className="bg-slate-900 px-6 py-4 flex justify-between items-center text-white sticky top-0 z-30 shadow-md border-b border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="bg-blue-600 p-2 rounded-lg border border-blue-500 shadow-sm">
+            <ShieldCheck className="w-5 h-5 text-white" />
           </div>
-          <button onClick={handleLogout} className="bg-slate-800 hover:bg-slate-700 p-3 rounded-full transition-all"><LogOut className="w-5 h-5" /></button>
+          <div>
+            <h1 className="text-sm font-bold uppercase tracking-wider">Admin Portal</h1>
+            <p className="text-slate-400 text-[10px] uppercase tracking-widest">Management System</p>
+          </div>
         </div>
+        <button onClick={handleLogout} className="text-slate-400 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5">
+          <LogOut className="w-4 h-4" /> ออกจากระบบ
+        </button>
       </div>
 
-      <div className="max-w-2xl mx-auto p-4 mt-4">
+      <div className="max-w-4xl mx-auto w-full p-4 flex-1 flex flex-col mt-2">
         
         {/* เมนูเปลี่ยนหน้า (Tabs) */}
         {!selectedUser && (
-          <div className="flex bg-white rounded-2xl shadow-sm p-1 mb-6 border border-slate-200">
-            <button onClick={() => setActiveTab('manage')} className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-xl transition-all relative ${activeTab === 'manage' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-              👥 จัดการสิทธิ์
-              {pendingUsers.length > 0 && <span className="absolute top-2 right-4 w-3 h-3 bg-red-500 rounded-full animate-pulse" />}
+          <div className="flex bg-white rounded-xl shadow-sm p-1.5 mb-6 border border-slate-200">
+            <button
+              onClick={() => setActiveTab("manage")}
+              className={`flex-1 py-2.5 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 relative ${activeTab === "manage" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              <Users className="w-4 h-4" /> สิทธิ์พนักงาน
+              {pendingUsers.length > 0 && (
+                <span className="absolute top-2 right-2 md:right-6 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-white" />
+              )}
             </button>
-            <button onClick={() => setActiveTab('kiosk')} className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-xl transition-all ${activeTab === 'kiosk' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-              📦 คีย์ยอด
+            <button
+              onClick={() => setActiveTab("kiosk")}
+              className={`flex-1 py-2.5 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === "kiosk" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              <ClipboardEdit className="w-4 h-4" /> คีย์ยอด
             </button>
-            <button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-xl transition-all ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <Database className="w-4 h-4 inline mb-1" /> ประวัติ (CRUD)
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`flex-1 py-2.5 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === "history" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              <Database className="w-4 h-4" /> ประวัติระบบ
             </button>
           </div>
         )}
 
-        {/* ================= หน้าต่าง: จัดการสิทธิ์ ================= */}
-        {activeTab === 'manage' && !selectedUser && (
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b font-bold text-slate-500 text-sm">รายชื่อพนักงานทั้งหมด ({users.length})</div>
+        {/* ================= แท็บที่ 1: จัดการสิทธิ์ ================= */}
+        {activeTab === "manage" && !selectedUser && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
+            <div className="p-5 border-b border-slate-200 bg-slate-50/50">
+              <h2 className="text-lg font-bold text-slate-800">รายชื่อพนักงานทั้งหมด ({users.length})</h2>
+              <p className="text-sm text-slate-500 mt-0.5">อนุมัติหรือระงับสิทธิ์การใช้งานของพนักงาน</p>
+            </div>
             <div className="divide-y divide-slate-100">
-              {users.map(u => (
-                <div key={u.id} className="p-4 flex items-center justify-between hover:bg-slate-50">
-                  <div className="font-bold text-lg text-slate-700">{u.username}</div>
-                  <button onClick={() => toggleStatus(u.id, u.status, u.username)} className={`px-4 py-2 rounded-xl font-bold text-sm text-white transition-transform flex items-center gap-1 ${u.status === 'approved' ? 'bg-emerald-500' : 'bg-amber-500'}`}>
-                    {u.status === 'approved' ? <><CheckCircle2 className="w-4 h-4"/> ใช้งานได้</> : <><Clock className="w-4 h-4"/> รออนุมัติ</>}
+              {users.map((u) => (
+                <div key={u.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-black text-xl border border-blue-100">
+                      {u.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800 text-lg">{u.username}</p>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">สมัครเมื่อ: {format(new Date(u.created_at), 'dd MMM yyyy')}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => toggleStatus(u.id, u.status, u.username)}
+                    className={`px-4 py-2.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm ${u.status === "approved" ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100" : "bg-slate-800 text-white border border-slate-900 hover:bg-slate-700"}`}
+                  >
+                    {u.status === "approved" ? (
+                      <><CheckCircle2 className="w-4 h-4" /> ใช้งานได้</>
+                    ) : (
+                      <><Clock className="w-4 h-4" /> รออนุมัติ</>
+                    )}
                   </button>
                 </div>
               ))}
-              {users.length === 0 && <p className="text-center text-slate-400 py-10 font-medium">ยังไม่มีพนักงานในระบบ</p>}
+              {users.length === 0 && (
+                <p className="text-center text-slate-400 py-10 font-medium">ยังไม่มีพนักงานในระบบ</p>
+              )}
             </div>
           </div>
         )}
 
-        {/* ================= หน้าต่าง: Kiosk (เลือกลูกน้อง) ================= */}
-        {activeTab === 'kiosk' && !selectedUser && (
-          <div>
-            <h2 className="text-lg font-black text-slate-800 mb-4 px-2">เลือกลูกน้องที่ต้องการลงยอด</h2>
+        {/* ================= แท็บที่ 2: Kiosk (เลือกลูกน้อง) ================= */}
+        {activeTab === "kiosk" && !selectedUser && (
+          <div className="animate-in fade-in duration-300">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">เลือกลูกน้องที่ต้องการคีย์ยอด</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {approvedUsers.map(u => (
-                <div key={u.id} onClick={() => setSelectedUser(u)} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center gap-3 cursor-pointer hover:border-indigo-500 hover:shadow-lg transition-all active:scale-95">
-                  <div className="w-14 h-14 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center"><UserCircle2 className="w-8 h-8" /></div>
-                  <span className="font-bold text-slate-800">{u.username}</span>
+              {approvedUsers.map((u) => (
+                <div
+                  key={u.id}
+                  onClick={() => setSelectedUser(u)}
+                  className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center gap-3 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all active:bg-slate-50 group"
+                >
+                  <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <UserCircle2 className="w-7 h-7" />
+                  </div>
+                  <span className="font-bold text-slate-800 text-sm">{u.username}</span>
                 </div>
               ))}
+              {approvedUsers.length === 0 && (
+                <div className="col-span-full p-8 text-center border border-slate-200 bg-white rounded-xl text-slate-400 font-medium">
+                  ยังไม่มีพนักงานที่ได้รับอนุมัติ
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ================= หน้าต่าง: Kiosk (ฟอร์มคีย์ตัวเลข) ================= */}
+        {/* ================= แท็บที่ 2: Kiosk (ฟอร์มคีย์ตัวเลข) ================= */}
         {selectedUser && (
           <div className="animate-in slide-in-from-right-4 duration-300">
-            <button onClick={() => { setSelectedUser(null); setRate(""); }} className="mb-4 flex items-center gap-2 text-slate-500 font-bold hover:text-slate-800 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-200 active:scale-95">
-              <ArrowLeft className="w-4 h-4"/> กลับไปหน้าเลือกคน
+            <button
+              onClick={() => { setSelectedUser(null); setRate(""); }}
+              className="mb-4 flex items-center gap-2 text-slate-500 font-semibold hover:text-slate-800 bg-white px-4 py-2 rounded-lg shadow-sm border border-slate-200 active:bg-slate-50 transition-all text-sm"
+            >
+              <ArrowLeft className="w-4 h-4" /> เปลี่ยนพนักงาน
             </button>
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
-              <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full mb-6 font-bold text-sm">
-                <ClipboardEdit className="w-4 h-4" /> ลงยอดให้: {selectedUser.username}
+            <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center">
+              <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-100 text-blue-700 px-4 py-2 rounded-lg mb-8 font-semibold text-sm">
+                <ClipboardEdit className="w-4 h-4" /> ลงยอดด่วนให้: {selectedUser.username}
               </div>
               <form onSubmit={handleSaveDelivery}>
-                <input type="number" step="0.01" autoFocus value={rate} onChange={(e) => setRate(e.target.value)} placeholder="0.00" className="w-full text-center text-6xl font-black text-indigo-600 border-b-2 border-slate-200 pb-4 mb-8 outline-none focus:border-indigo-500" />
-                <button type="submit" disabled={!rate || isSaving} className="w-full bg-slate-900 disabled:bg-slate-300 text-white py-4 rounded-xl font-bold text-lg shadow-md">
-                  {isSaving ? 'กำลังบันทึก...' : 'บันทึกยอดชิ้นนี้'}
+                <input
+                  type="number"
+                  step="0.01"
+                  autoFocus
+                  value={rate}
+                  onChange={(e) => setRate(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full text-center text-5xl font-bold text-slate-800 border-b-2 border-slate-200 pb-4 mb-8 outline-none focus:border-blue-600 placeholder:text-slate-300 transition-colors"
+                />
+                <button
+                  type="submit"
+                  disabled={!rate || isSaving}
+                  className="w-full bg-blue-600 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 border border-transparent text-white py-4 rounded-lg font-bold text-base shadow-sm active:scale-95 transition-all"
+                >
+                  {isSaving ? "กำลังบันทึก..." : "บันทึกยอดจัดส่ง"}
                 </button>
               </form>
             </div>
           </div>
         )}
 
-        {/* ================= หน้าต่าง: ประวัติ & แก้ไขข้อมูล (CRUD) ================= */}
-        {activeTab === 'history' && !selectedUser && (
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-             <div className="p-4 bg-slate-50 border-b font-bold text-slate-500 text-sm flex justify-between items-center">
-                <span>ประวัติการลงยอด (50 รายการล่าสุด)</span>
-                <button onClick={fetchDeliveries} className="text-indigo-600 text-xs hover:underline">รีเฟรช</button>
-             </div>
-             <div className="divide-y divide-slate-100">
-                {deliveries.map(item => (
-                  <div key={item.id} className="p-4 hover:bg-slate-50 flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                        {item.profiles?.username || 'ไม่ทราบชื่อ'} 
-                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">฿{item.rate_per_piece}</span>
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">{format(new Date(item.created_at), "dd MMM yy, HH:mm", { locale: th })}</p>
+        {/* ================= แท็บที่ 3: ประวัติ & แก้ไขข้อมูล (CRUD) ================= */}
+        {activeTab === "history" && !selectedUser && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
+            <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">ประวัติการลงยอด</h2>
+                <p className="text-sm text-slate-500 mt-0.5">แสดงข้อมูล 50 รายการล่าสุดในระบบ</p>
+              </div>
+              <button onClick={fetchDeliveries} className="text-blue-600 text-sm font-semibold hover:underline bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100 active:bg-blue-100">
+                รีเฟรชข้อมูล
+              </button>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {deliveries.map((item) => (
+                <div key={item.id} className="p-4 hover:bg-slate-50 flex items-center justify-between transition-colors">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Users className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="font-bold text-slate-800 text-sm">{item.profiles?.username || "ไม่ทราบชื่อ"}</span>
+                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold border border-blue-100">
+                        ฿{item.rate_per_piece}
+                      </span>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleEditDelivery(item)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 active:scale-95"><Edit2 className="w-4 h-4" /></button>
-                      <button onClick={() => handleDeleteDelivery(item.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 active:scale-95"><Trash2 className="w-4 h-4" /></button>
-                    </div>
+                    <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                      <Clock className="w-3 h-3" />
+                      {format(new Date(item.created_at), "dd MMM yy, HH:mm", { locale: th })}
+                    </p>
                   </div>
-                ))}
-                {deliveries.length === 0 && <p className="text-center text-slate-400 py-10 font-medium">ยังไม่มีข้อมูลการจัดส่ง</p>}
-             </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditDelivery(item)}
+                      className="p-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-blue-400 hover:text-blue-600 active:bg-slate-50 transition-all shadow-sm"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDelivery(item.id)}
+                      className="p-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:border-red-400 hover:text-red-600 active:bg-slate-50 transition-all shadow-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {deliveries.length === 0 && (
+                <div className="p-10 text-center text-slate-400 font-medium flex flex-col items-center">
+                  <Database className="w-10 h-10 text-slate-200 mb-3" />
+                  ยังไม่มีข้อมูลการจัดส่ง
+                </div>
+              )}
+            </div>
           </div>
         )}
 

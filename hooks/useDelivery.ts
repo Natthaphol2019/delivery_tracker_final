@@ -234,33 +234,37 @@ export function useDelivery(activeProfile: any) {
     else if (activeTab === "history") loadEditLogs();
   }, [currentDate, activeTab, activeProfile?.id]);
 
-// ================= ACTION HANDLERS =================
+  // ================= ACTION HANDLERS =================
   const startTracking = async () => {
     const count = Number(totalItemsCount);
-    
+
     if (count > 0 && count <= 500) {
       // เพิ่ม SweetAlert เด้งถามยืนยันก่อนเริ่มคีย์ราคา
       const { isConfirmed } = await Swal.fire({
-        title: 'เริ่มบันทึกยอด?',
+        title: "เริ่มบันทึกยอด?",
         html: `ประจำวันที่: <b>${format(currentDate, "d MMMM yyyy", { locale: th })}</b><br/>จำนวนทั้งหมด: <b class="text-blue-600 text-lg">${count} ชิ้น</b>`,
-        icon: 'info',
+        icon: "info",
         showCancelButton: true,
-        confirmButtonColor: '#2563eb', // สีน้ำเงินให้เข้ากับธีม Business
-        cancelButtonColor: '#94a3b8',
-        confirmButtonText: 'ใช่, เริ่มเลย',
-        cancelButtonText: 'ยกเลิก',
-        reverseButtons: true
+        confirmButtonColor: "#2563eb", // สีน้ำเงินให้เข้ากับธีม Business
+        cancelButtonColor: "#94a3b8",
+        confirmButtonText: "ใช่, เริ่มเลย",
+        cancelButtonText: "ยกเลิก",
+        reverseButtons: true,
       });
 
       // ถ้าพนักงานกดยืนยัน ค่อยรันคำสั่งสร้างช่องกรอกข้อมูล
       if (isConfirmed) {
-        setItemRates(new Array(count).fill("")); 
-        setActiveIndex(0); 
-        goTo({ isSettingUp: false }); 
+        setItemRates(new Array(count).fill(""));
+        setActiveIndex(0);
+        goTo({ isSettingUp: false });
       }
     } else {
       // ดักเคสกรอกเลขแปลกๆ หรือเลขติดลบ
-      Swal.fire('ข้อมูลไม่ถูกต้อง', 'กรุณาระบุจำนวนชิ้นระหว่าง 1 - 500 ชิ้น', 'warning');
+      Swal.fire(
+        "ข้อมูลไม่ถูกต้อง",
+        "กรุณาระบุจำนวนชิ้นระหว่าง 1 - 500 ชิ้น",
+        "warning",
+      );
     }
   };
 
@@ -357,31 +361,37 @@ export function useDelivery(activeProfile: any) {
   const handleSubmit = async () => {
     if (!activeProfile?.id) return;
     setIsLoading(true);
+
     try {
       const dateStr = format(currentDate, "yyyy-MM-dd");
-      const insertPayload = itemRates
-        .map((rate, index) => {
-          if (rate !== "" && Number(rate) > 0)
-            return {
-              delivery_date: dateStr,
-              quantity: 1,
-              rate_per_piece: Number(rate),
-              item_index: index + 1,
-              user_id: activeProfile.id,
-            };
-          return null;
-        })
-        .filter(Boolean);
+
+      // ใช้ .reduce() แทน .map().filter() เพื่อไม่ให้ TypeScript มองเห็นค่า null
+      const insertPayload = itemRates.reduce((acc: any[], rate, index) => {
+        if (rate !== "" && Number(rate) > 0) {
+          acc.push({
+            delivery_date: dateStr,
+            quantity: 1,
+            rate_per_piece: Number(rate),
+            item_index: index + 1,
+            user_id: activeProfile.id,
+          });
+        }
+        return acc;
+      }, []);
+
       await supabase.from("deliveries").insert(insertPayload);
+
       Swal.fire({
         icon: "success",
         title: "บันทึกยอดสำเร็จ!",
         showConfirmButton: false,
         timer: 1500,
       });
+
       setTotalItemsCount("");
       setItemRates([]);
       setIsSettingUp(true);
+
       window.history.replaceState(
         {
           __app: true,
@@ -391,6 +401,7 @@ export function useDelivery(activeProfile: any) {
         } as NavState,
         "",
       );
+
       await fetchDeliveriesForDate(currentDate);
     } catch (error) {
       Swal.fire("ผิดพลาด", "บันทึกข้อมูลไม่สำเร็จ", "error");
