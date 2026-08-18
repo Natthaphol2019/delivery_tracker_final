@@ -43,6 +43,8 @@ export function TrackerTab({ delivery }: { delivery: any }) {
     confirmSubmit,
     progressPercent,
     isLoading,
+    isRecordingItem, // ดึง state โหลดรายชิ้นมาใช้
+    isShaking,       // ดึง state สั่นมาใช้
   } = delivery;
 
   return (
@@ -199,14 +201,20 @@ export function TrackerTab({ delivery }: { delivery: any }) {
               </button>
             </div>
             {!isCustomMode ? (
-              <div className="grid grid-cols-4 gap-2 mb-3">
+              // เพิ่ม class สั่น (animate-shake) ตรงกล่องครอบปุ่มนี้ 
+              <div className={`grid grid-cols-4 gap-2 mb-3 ${isShaking ? 'animate-shake' : ''}`}>
                 {presetRates.slice(0, 7).map((rate: number) => (
                   <button
                     key={rate}
                     onClick={() => handleRateSelect(rate)}
-                    className="bg-white border border-slate-200 hover:border-indigo-300 text-slate-800 py-4 rounded-xl font-black text-xl shadow-sm active:bg-gradient-to-br active:from-indigo-50 active:to-violet-50 active:text-indigo-600 active:scale-95 transition-all"
+                    // เพิ่ม flex items-center justify-center ให้ Spinner อยู่ตรงกลาง
+                    className="bg-white border border-slate-200 hover:border-indigo-300 text-slate-800 py-4 rounded-xl font-black text-xl shadow-sm active:bg-gradient-to-br active:from-indigo-50 active:to-violet-50 active:text-indigo-600 active:scale-95 transition-all flex items-center justify-center"
                   >
-                    {rate}
+                    {isRecordingItem ? (
+                      <span className="animate-spin inline-block w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full"></span>
+                    ) : (
+                      rate
+                    )}
                   </button>
                 ))}
                 <button
@@ -217,7 +225,8 @@ export function TrackerTab({ delivery }: { delivery: any }) {
                 </button>
               </div>
             ) : (
-              <div className="flex gap-2 mb-3">
+              // เพิ่ม class สั่น (animate-shake) ตรงโหมด Custom ด้วย
+              <div className={`flex gap-2 mb-3 ${isShaking ? 'animate-shake' : ''}`}>
                 <button
                   onClick={() => setIsCustomMode(false)}
                   className="px-4 bg-slate-300 text-slate-700 font-bold rounded-xl active:scale-95"
@@ -235,9 +244,13 @@ export function TrackerTab({ delivery }: { delivery: any }) {
                 />
                 <button
                   onClick={() => handleRateSelect(customRate)}
-                  className="px-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold text-lg rounded-xl active:scale-95 shadow-md shadow-indigo-200"
+                  className="px-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold text-lg rounded-xl active:scale-95 shadow-md shadow-indigo-200 flex items-center justify-center min-w-[80px]"
                 >
-                  ตกลง
+                  {isRecordingItem ? (
+                      <span className="animate-spin inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full"></span>
+                    ) : (
+                      "ตกลง"
+                    )}
                 </button>
               </div>
             )}

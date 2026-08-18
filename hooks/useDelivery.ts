@@ -39,6 +39,8 @@ export function useDelivery(activeProfile: any) {
 
   const [editLogs, setEditLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecordingItem, setIsRecordingItem] = useState(false);
+  const [isShaking, setIsShaking] = useState(false);
 
   const activeItemRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef(activeTab);
@@ -162,12 +164,13 @@ export function useDelivery(activeProfile: any) {
     const dateStr = format(date, "yyyy-MM-dd");
     const { data } = await supabase
       .from("deliveries")
-      .select("total_amount")
+      .select("rate_per_piece") // 👈 เปลี่ยนจาก total_amount เป็น rate_per_piece
       .eq("delivery_date", dateStr)
       .eq("user_id", activeProfile.id);
     if (data)
       setTodayTotal(
-        data.reduce((sum, item) => sum + Number(item.total_amount), 0),
+        // 👈 เปลี่ยนจาก item.total_amount เป็น item.rate_per_piece
+        data.reduce((sum, item) => sum + Number(item.rate_per_piece), 0),
       );
   };
 
@@ -186,7 +189,8 @@ export function useDelivery(activeProfile: any) {
         if (!acc[date])
           acc[date] = { date, totalItems: 0, totalAmount: 0, cycle };
         acc[date].totalItems += curr.quantity;
-        acc[date].totalAmount += Number(curr.total_amount);
+        // 👈 เปลี่ยนจาก curr.total_amount เป็น curr.rate_per_piece
+        acc[date].totalAmount += Number(curr.rate_per_piece);
         return acc;
       }, {} as any);
       const summaryArray = Object.values(grouped) as any[];
@@ -268,29 +272,56 @@ export function useDelivery(activeProfile: any) {
     }
   };
 
-  const handleRateSelect = async (rate: number | string) => {
+const handleRateSelect = async (rate: number | string) => {
     if (itemRates.length === 0) return;
+
+    // 🛑 ดักการกดรัว (Spam Protection)
+    if (isRecordingItem) {
+      setIsShaking(true);
+      
+      // แสดงแจ้งเตือนแบบ Toast (กล่องข้อความเล็กๆ ด้านบน)
+      Swal.fire({
+        toast: true,
+        position: 'top',
+        showConfirmButton: false,
+        timer: 1500,
+        icon: 'warning',
+        title: 'ใจเย็น ๆ กำลังบันทึกยอด 😅'
+      });
+
+      // หยุดสั่นหลังจากผ่านไป 0.4 วินาที
+      setTimeout(() => setIsShaking(false), 400);
+      return; // เตะออก ไม่ให้ทำคำสั่งถัดไป
+    }
+
+    // ⏳ เริ่มโหลด
+    setIsRecordingItem(true);
+
+    // หน่วงเวลา 1 วินาที (1000 ms) ให้ดู Business
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     const newRates = [...itemRates];
     newRates[activeIndex] = rate.toString();
     setItemRates(newRates);
 
-    // ถนากรอกราคาเองแบบ Custom Mode
+    // กรณี Custom Mode
     if (isCustomMode && Number(rate) > 0) {
       const numericRate = Number(rate);
-
-      // เช็คว่าเรทนี้ยังไม่มีในปุ่มใช่ไหม? ถ้าไม่มีให้บันทึกลงตารางทันที
       if (!presetRates.includes(numericRate)) {
         await supabase.from("custom_rates").insert({
           user_id: activeProfile.id,
           rate: numericRate,
         });
-        fetchRates(); // ดึงข้อมูลใหม่มาอัปเดตปุ่มเรียงใหม่ทันที
+        fetchRates(); 
       }
       setIsCustomMode(false);
       setCustomRate("");
     }
 
     if (activeIndex < itemRates.length - 1) setActiveIndex(activeIndex + 1);
+
+    // ✅ โหลดเสร็จสิ้น เปิดให้กดชิ้นต่อไปได้
+    setIsRecordingItem(false);
   };
 
   const handleUndo = () => {
@@ -514,6 +545,8 @@ export function useDelivery(activeProfile: any) {
     progressPercent,
     hideBottomNav,
     filteredSummary,
+    isRecordingItem,
+    isShaking,
     startTracking,
     handleRateSelect,
     handleUndo,
